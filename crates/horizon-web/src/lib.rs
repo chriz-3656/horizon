@@ -105,11 +105,9 @@ fn create_depth_texture(
 
 impl GpuContext {
     async fn new(window: Arc<Window>) -> Result<Self, String> {
-        let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
-            backends: wgpu::Backends::all(),
-            flags: wgpu::InstanceFlags::default(),
-            ..Default::default()
-        });
+        let mut descriptor = wgpu::InstanceDescriptor::new_without_display_handle();
+        descriptor.backends = wgpu::Backends::all();
+        let instance = wgpu::Instance::new(descriptor);
 
         let surface = instance
             .create_surface(window.clone())
@@ -120,9 +118,10 @@ impl GpuContext {
                 power_preference: wgpu::PowerPreference::HighPerformance,
                 compatible_surface: Some(&surface),
                 force_fallback_adapter: false,
+                ..Default::default()
             })
             .await
-            .ok_or_else(|| "Failed to find suitable graphics adapter (WebGPU/WebGL2)".to_string())?;
+            .map_err(|e| format!("Adapter request failed: {e}"))?;
 
         let info = adapter.get_info();
         log::info!(
@@ -196,8 +195,8 @@ impl GpuContext {
 
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("Horizon Pipeline Layout"),
-            bind_group_layouts: &[&bind_group_layout],
-            push_constant_ranges: &[],
+            bind_group_layouts: &[Some(&bind_group_layout)],
+            ..Default::default()
         });
 
         let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
@@ -207,7 +206,7 @@ impl GpuContext {
                 module: &shader,
                 entry_point: Some("vs_main"),
                 compilation_options: Default::default(),
-                buffers: &[Vertex::desc()],
+                buffers: &[Some(Vertex::desc())],
             },
             primitive: wgpu::PrimitiveState {
                 topology: wgpu::PrimitiveTopology::TriangleList,
@@ -350,7 +349,7 @@ impl GpuContext {
         });
 
         // Notify web UI that GPU context is ready
-        if let Some(win) = web_sys::window() {
+        if let Some(_win) = web_sys::window() {
             let backend_name = format!("{:?}", info.backend);
             let escaped_name = info.name.replace('\'', "\\'");
             let code = format!(
@@ -394,7 +393,7 @@ impl GpuContext {
         }
     }
 
-    fn render(&mut self) -> Result<(), wgpu::SurfaceError> {
+    fn render(&mut self) {
         let t = ((current_time_ms() - self.start_time) / 1000.0) as f32;
 
         let aspect = (self.config.width as f32) / (self.config.height as f32).max(1.0);
@@ -445,8 +444,17 @@ impl GpuContext {
             bytemuck::cast_slice(&[ground_uniforms]),
         );
 
-        let output = self.surface.get_current_texture()?;
-        let view_texture = output
+        let frame = match self.surface.get_current_texture() {
+            wgpu::CurrentSurfaceTexture::Success(f)
+            | wgpu::CurrentSurfaceTexture::Suboptimal(f) => f,
+            wgpu::CurrentSurfaceTexture::Outdated | wgpu::CurrentSurfaceTexture::Lost => {
+                self.surface.configure(&self.device, &self.config);
+                return;
+            }
+            _ => return,
+        };
+
+        let view_texture = frame
             .texture
             .create_view(&wgpu::TextureViewDescriptor::default());
 
@@ -484,8 +492,7 @@ impl GpuContext {
                     }),
                     stencil_ops: None,
                 }),
-                timestamp_writes: None,
-                occlusion_query_set: None,
+                ..Default::default()
             });
 
             pass.set_pipeline(&self.pipeline);
@@ -504,9 +511,7 @@ impl GpuContext {
         }
 
         self.queue.submit(std::iter::once(encoder.finish()));
-        output.present();
-
-        Ok(())
+        frame.present();
     }
 }
 
@@ -566,7 +571,7 @@ impl ApplicationHandler for HorizonWebApp {
                         }
                         Err(err) => {
                             log::error!("GPU initialization failed: {err}");
-                            if let Some(win) = web_sys::window() {
+                            if let Some(_win) = web_sys::window() {
                                 let _ = js_sys::eval(&format!(
                                     "if (window.horizonOnGpuError) window.horizonOnGpuError('{}');",
                                     err.replace('\'', "\\'")
@@ -586,24 +591,7 @@ impl ApplicationHandler for HorizonWebApp {
         match event {
             WindowEvent::RedrawRequested => {
                 if let Some(gpu) = self.gpu.borrow_mut().as_mut() {
-                    match gpu.render() {
-                        Ok(_) => {}
-                        Err(wgpu::SurfaceError::Lost | wgpu::SurfaceError::Outdated) => {
-                            if let Some(win) = self.window.as_ref() {
-                                let size = win.inner_size();
-                                gpu.resize(size.width, size.height);
-                            }
-                        }
-                        Err(wgpu::SurfaceError::Timeout) => {
-                            log::warn!("Surface timeout");
-                        }
-                        Err(wgpu::SurfaceError::OutOfMemory) => {
-                            log::error!("Surface out of memory");
-                        }
-                        Err(e) => {
-                            log::error!("Render frame error: {e:?}");
-                        }
-                    }
+                    gpu.render();
                 }
 
                 if let Some(win) = self.window.as_ref() {
