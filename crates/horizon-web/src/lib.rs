@@ -46,6 +46,7 @@ impl ApplicationHandler for HorizonWebApp {
         match event_loop.create_window(attributes) {
             Ok(win) => {
                 let win = Arc::new(win);
+                win.request_redraw();
                 self.window = Some(win.clone());
                 log::info!("Horizon Web window created successfully.");
             }

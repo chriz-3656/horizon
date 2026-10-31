@@ -50,10 +50,6 @@ jobs:
             --out-name horizon_web \
             target/wasm32-unknown-unknown/release/horizon_web.wasm
 
-      - name: Optimize Wasm with wasm-opt
-        run: |
-          wasm-opt -O3 dist/horizon_web_bg.wasm -o dist/horizon_web_bg.wasm || true
-
       - name: Package Web Shell & Assets
         run: |
           cp web/index.html dist/index.html
