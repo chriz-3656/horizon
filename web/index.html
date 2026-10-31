@@ -4,17 +4,48 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Horizon - Minecraft 26.3 Web</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>⛏️</text></svg>">
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
   <div id="canvas-container">
     <canvas id="horizon-canvas"></canvas>
   </div>
-  
+
+  <!-- In-game Crosshair -->
+  <div id="crosshair"></div>
+
+  <!-- In-game HUD Overlay -->
+  <div id="hud" class="hidden">
+    <div class="hud-top-left">
+      <div class="title-row">
+        <span class="hud-logo">⛏️ Horizon Web</span>
+        <span class="hud-version">26.3</span>
+        <span id="gpu-badge" class="hud-badge">WebGL2</span>
+      </div>
+      <div class="stats-row">
+        <span>FPS: <strong id="fps-counter">--</strong></span>
+        <span class="sep">•</span>
+        <span id="resolution-stat">--</span>
+      </div>
+    </div>
+
+    <div class="hud-bottom-left">
+      <div class="controls-pill">
+        <span>🖱️ Drag to rotate</span>
+        <span class="sep">•</span>
+        <span>📜 Scroll to zoom</span>
+        <span class="sep">•</span>
+        <span><kbd>R</kbd> Reset</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Startup Loading & Status Card -->
   <div id="status-card">
     <div class="header">
       <span class="logo">⛏️ Horizon Web</span>
-      <span class="badge">Minecraft 26.3 • WebGPU</span>
+      <span class="badge" id="startup-badge">Minecraft 26.3</span>
     </div>
     <p id="status-message">Initializing WebAssembly engine...</p>
     <div id="progress-bar-container">
@@ -25,32 +56,82 @@
   <script type="module">
     import init, { run_horizon } from './horizon_web.js';
 
-    async function start() {
-      const statusMsg = document.getElementById('status-message');
-      const progressBar = document.getElementById('progress-bar');
-      const statusCard = document.getElementById('status-card');
+    const statusMsg = document.getElementById('status-message');
+    const progressBar = document.getElementById('progress-bar');
+    const statusCard = document.getElementById('status-card');
+    const hud = document.getElementById('hud');
+    const gpuBadge = document.getElementById('gpu-badge');
+    const fpsCounter = document.getElementById('fps-counter');
+    const resolutionStat = document.getElementById('resolution-stat');
+    const canvas = document.getElementById('horizon-canvas');
 
+    function updateResolution() {
+      const dpr = window.devicePixelRatio || 1;
+      const w = Math.round(window.innerWidth * dpr);
+      const h = Math.round(window.innerHeight * dpr);
+      resolutionStat.textContent = `${w} × ${h} (${dpr > 1 ? dpr.toFixed(1) + 'x' : '1x'})`;
+    }
+
+    // Called from Rust when WGPU context is established
+    window.horizonOnGpuReady = (backend, name) => {
+      statusMsg.textContent = `Graphics ready: ${backend}`;
+      progressBar.style.width = '100%';
+      gpuBadge.textContent = `${backend} • ${name}`;
+      updateResolution();
+
+      setTimeout(() => {
+        statusCard.classList.add('hidden');
+        hud.classList.remove('hidden');
+      }, 400);
+    };
+
+    // Called from Rust if GPU request fails
+    window.horizonOnGpuError = (err) => {
+      statusMsg.textContent = 'Graphics Error: ' + err;
+      statusMsg.style.color = '#ff6b6b';
+      progressBar.style.backgroundColor = '#ff6b6b';
+    };
+
+    // Real-time FPS monitor
+    let frameCount = 0;
+    let lastFpsUpdate = performance.now();
+    function tickFps() {
+      frameCount++;
+      const now = performance.now();
+      if (now - lastFpsUpdate >= 500) {
+        const fps = Math.round((frameCount * 1000) / (now - lastFpsUpdate));
+        fpsCounter.textContent = fps;
+        frameCount = 0;
+        lastFpsUpdate = now;
+      }
+      requestAnimationFrame(tickFps);
+    }
+    requestAnimationFrame(tickFps);
+
+    window.addEventListener('resize', updateResolution);
+
+    async function start() {
       try {
         if (!navigator.gpu) {
           console.warn("WebGPU not found on navigator; wgpu will attempt WebGL2 fallback.");
         }
-        
-        progressBar.style.width = '35%';
+
+        progressBar.style.width = '30%';
         statusMsg.textContent = 'Loading WebAssembly binary...';
 
         await init();
 
-        progressBar.style.width = '85%';
-        statusMsg.textContent = 'Starting Winit event loop & WebGPU context...';
+        progressBar.style.width = '75%';
+        statusMsg.textContent = 'Initializing Winit window & WGPU surface...';
+
+        // Set initial canvas pixel buffer size
+        const dpr = window.devicePixelRatio || 1;
+        canvas.width = Math.max(1, Math.floor(window.innerWidth * dpr));
+        canvas.height = Math.max(1, Math.floor(window.innerHeight * dpr));
 
         run_horizon('horizon-canvas');
-
-        progressBar.style.width = '100%';
-        setTimeout(() => {
-          statusCard.classList.add('hidden');
-        }, 800);
       } catch (err) {
-        statusMsg.textContent = 'Error starting Horizon: ' + err;
+        statusMsg.textContent = 'Engine error: ' + err;
         statusMsg.style.color = '#ff6b6b';
         console.error(err);
       }
