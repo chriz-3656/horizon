@@ -257,6 +257,7 @@ fn release() {
     }
 }
 
+#[allow(dead_code)]
 #[cfg(not(any(all(target_os = "linux", target_env = "gnu"), target_vendor = "apple")))]
 fn release() {}
 

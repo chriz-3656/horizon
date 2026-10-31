@@ -47,6 +47,14 @@ pub fn open_vulkan_device(
     Some(unsafe { adapter.create_device_from_hal(open, desc) })
 }
 
+#[cfg(any(target_os = "macos", target_arch = "wasm32"))]
+pub fn open_vulkan_device(
+    _adapter: &wgpu::Adapter,
+    _desc: &wgpu::DeviceDescriptor<'_>,
+) -> Option<Result<(wgpu::Device, wgpu::Queue), wgpu::RequestDeviceError>> {
+    None
+}
+
 /// Tells the compositor, through `VK_EXT_hdr_metadata`, that the swapchain's
 /// content is BT.709, peaks at `peak` nits and is no darker than `black`. Needs a
 /// device from `open_vulkan_device` and a configured surface; does nothing otherwise.

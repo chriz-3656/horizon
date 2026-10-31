@@ -5,9 +5,11 @@
 //! process's memory: it is never logged, printed or written anywhere.
 use std::{
     path::Path,
-    sync::{Arc, Mutex, OnceLock},
+    sync::{Arc, OnceLock},
     time::{Duration, SystemTime},
 };
+#[cfg(not(target_arch = "wasm32"))]
+use std::sync::Mutex;
 
 /// MinecraftServicesEnvironment.PROD.
 pub const DEFAULT_DISCOVERY: &str = "https://discovery.minecraftservices.com/minecraft/client";
@@ -338,6 +340,7 @@ pub fn has_joined(
     if let Some(ip) = ip {
         query.push_str(&format!("&ip={}", url_encode(&ip.to_string())));
     }
+    #[cfg(not(target_arch = "wasm32"))]
     let separator = if url.contains('?') { '&' } else { '?' };
     #[cfg(not(target_arch = "wasm32"))]
     let body = match agent().get(&format!("{url}{separator}{query}")).call() {
