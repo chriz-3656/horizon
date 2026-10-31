@@ -234,15 +234,20 @@ fn download_file_within(
             })
             .map_err(|e| format!("Failed to remove existing file {}: {e}", target.display()))?;
     }
-    let mut call = ureq::AgentBuilder::new()
-        .timeout_connect(timeout)
-        .timeout_read(timeout)
-        .build()
-        .get(&request.url);
-    for (name, value) in headers {
-        call = call.set(name, value);
-    }
-    let response = call.call().map_err(|e| e.to_string())?;
+    #[cfg(not(target_arch = "wasm32"))]
+    let response = {
+        let mut call = ureq::AgentBuilder::new()
+            .timeout_connect(timeout)
+            .timeout_read(timeout)
+            .build()
+            .get(&request.url);
+        for (name, value) in headers {
+            call = call.set(name, value);
+        }
+        call.call().map_err(|e| e.to_string())?
+    };
+    #[cfg(target_arch = "wasm32")]
+    return Err("Server pack download not supported on Web".to_string());
     let size = response
         .header("Content-Length")
         .and_then(|v| v.trim().parse::<u64>().ok());

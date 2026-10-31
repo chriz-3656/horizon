@@ -891,21 +891,29 @@ impl SkinSlots {
 /// A GET over HTTP or HTTPS (textures.minecraft.net serves both; vanilla
 /// uses https): the body of a 2xx answer, 16 MiB at most, after redirects.
 fn http_get(url: &str) -> Option<Vec<u8>> {
-    use std::io::Read;
-    let response = ureq::AgentBuilder::new()
-        .timeout(std::time::Duration::from_secs(15))
-        .user_agent("Java")
-        .build()
-        .get(url)
-        .call()
-        .ok()?;
-    let mut body = Vec::new();
-    response
-        .into_reader()
-        .take(16 << 20)
-        .read_to_end(&mut body)
-        .ok()?;
-    Some(body)
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        use std::io::Read;
+        let response = ureq::AgentBuilder::new()
+            .timeout(std::time::Duration::from_secs(15))
+            .user_agent("Java")
+            .build()
+            .get(url)
+            .call()
+            .ok()?;
+        let mut body = Vec::new();
+        response
+            .into_reader()
+            .take(16 << 20)
+            .read_to_end(&mut body)
+            .ok()?;
+        Some(body)
+    }
+    #[cfg(target_arch = "wasm32")]
+    {
+        let _ = url;
+        None
+    }
 }
 
 /// SHA-1 (FIPS 180-4).

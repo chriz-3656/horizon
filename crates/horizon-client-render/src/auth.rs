@@ -171,6 +171,7 @@ pub fn discovery_url() -> String {
         .unwrap_or_else(|| DEFAULT_DISCOVERY.to_owned())
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn agent() -> ureq::Agent {
     ureq::AgentBuilder::new()
         .timeout(Duration::from_secs(15))
@@ -180,20 +181,27 @@ fn agent() -> ureq::Agent {
 
 /// The discovery document, fetched once per game (a failure is retried next time).
 pub(crate) fn discovery() -> Result<Arc<serde_json::Value>, JoinError> {
-    static CACHE: Mutex<Option<Arc<serde_json::Value>>> = Mutex::new(None);
-    if let Some(d) = CACHE.lock().unwrap().clone() {
-        return Ok(d);
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        static CACHE: Mutex<Option<Arc<serde_json::Value>>> = Mutex::new(None);
+        if let Some(d) = CACHE.lock().unwrap().clone() {
+            return Ok(d);
+        }
+        let doc: serde_json::Value = agent()
+            .get(&discovery_url())
+            .call()
+            .ok()
+            .and_then(|r| r.into_string().ok())
+            .and_then(|t| serde_json::from_str(&t).ok())
+            .ok_or(JoinError::Unavailable)?;
+        let doc = Arc::new(doc);
+        *CACHE.lock().unwrap() = Some(doc.clone());
+        Ok(doc)
     }
-    let doc: serde_json::Value = agent()
-        .get(&discovery_url())
-        .call()
-        .ok()
-        .and_then(|r| r.into_string().ok())
-        .and_then(|t| serde_json::from_str(&t).ok())
-        .ok_or(JoinError::Unavailable)?;
-    let doc = Arc::new(doc);
-    *CACHE.lock().unwrap() = Some(doc.clone());
-    Ok(doc)
+    #[cfg(target_arch = "wasm32")]
+    {
+        Err(JoinError::Unavailable)
+    }
 }
 
 /// MinecraftServicesDiscoveryService.getUrl(service, endpoint).
@@ -209,37 +217,45 @@ pub fn endpoint(doc: &serde_json::Value, service: &str, name: &str) -> Option<St
 /// attributes call falls back to the offline properties, a failed profile call
 /// to no actions, as vanilla does. Blocks: call it off the main thread.
 pub fn fetch_account_status(session: &AuthSession) -> crate::ban_notice::AccountStatus {
-    use crate::ban_notice::{AccountStatus, parse_profile_actions, parse_properties};
-    let Ok(doc) = discovery() else {
-        return AccountStatus::default();
-    };
-    let properties = endpoint(&doc, "player", "getAttributes")
-        .and_then(|url| {
-            agent()
-                .get(&url)
-                .set("Authorization", &format!("Bearer {}", session.access_token))
-                .call()
-                .ok()?
-                .into_string()
-                .ok()
-        })
-        .and_then(|body| parse_properties(&body))
-        .unwrap_or_default();
-    let actions = endpoint(&doc, "session", "getProfileById")
-        .and_then(|url| {
-            let url = url.replace("{profileId}", &format!("{:032x}", session.uuid));
-            agent()
-                .get(&format!("{url}?unsigned=true"))
-                .call()
-                .ok()?
-                .into_string()
-                .ok()
-        })
-        .map(|body| parse_profile_actions(&body))
-        .unwrap_or_default();
-    AccountStatus {
-        properties,
-        actions,
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        use crate::ban_notice::{AccountStatus, parse_profile_actions, parse_properties};
+        let Ok(doc) = discovery() else {
+            return AccountStatus::default();
+        };
+        let properties = endpoint(&doc, "player", "getAttributes")
+            .and_then(|url| {
+                agent()
+                    .get(&url)
+                    .set("Authorization", &format!("Bearer {}", session.access_token))
+                    .call()
+                    .ok()?
+                    .into_string()
+                    .ok()
+            })
+            .and_then(|body| parse_properties(&body))
+            .unwrap_or_default();
+        let actions = endpoint(&doc, "session", "getProfileById")
+            .and_then(|url| {
+                let url = url.replace("{profileId}", &format!("{:032x}", session.uuid));
+                agent()
+                    .get(&format!("{url}?unsigned=true"))
+                    .call()
+                    .ok()?
+                    .into_string()
+                    .ok()
+            })
+            .map(|body| parse_profile_actions(&body))
+            .unwrap_or_default();
+        AccountStatus {
+            properties,
+            actions,
+        }
+    }
+    #[cfg(target_arch = "wasm32")]
+    {
+        let _ = session;
+        crate::ban_notice::AccountStatus::default()
     }
 }
 
@@ -256,19 +272,27 @@ pub fn join_request(session: &AuthSession, server_hash: &str) -> String {
 /// MinecraftServicesSessionService.joinServer: tell the session service this
 /// account is joining the server whose hash is `server_hash`.
 pub fn join_server(session: &AuthSession, server_hash: &str) -> Result<(), JoinError> {
-    let doc = discovery()?;
-    let url = endpoint(&doc, "session", "join").ok_or(JoinError::Unavailable)?;
-    match agent()
-        .post(&url)
-        .set("Content-Type", "application/json; charset=utf-8")
-        .send_string(&join_request(session, server_hash))
+    #[cfg(not(target_arch = "wasm32"))]
     {
-        Ok(_) => Ok(()),
-        Err(ureq::Error::Status(status, response)) => Err(JoinError::from_response(
-            status,
-            &response.into_string().unwrap_or_default(),
-        )),
-        Err(ureq::Error::Transport(_)) => Err(JoinError::Unavailable),
+        let doc = discovery()?;
+        let url = endpoint(&doc, "session", "join").ok_or(JoinError::Unavailable)?;
+        match agent()
+            .post(&url)
+            .set("Content-Type", "application/json; charset=utf-8")
+            .send_string(&join_request(session, server_hash))
+        {
+            Ok(_) => Ok(()),
+            Err(ureq::Error::Status(status, response)) => Err(JoinError::from_response(
+                status,
+                &response.into_string().unwrap_or_default(),
+            )),
+            Err(ureq::Error::Transport(_)) => Err(JoinError::Unavailable),
+        }
+    }
+    #[cfg(target_arch = "wasm32")]
+    {
+        let _ = (session, server_hash);
+        Err(JoinError::Unavailable)
     }
 }
 
@@ -315,6 +339,7 @@ pub fn has_joined(
         query.push_str(&format!("&ip={}", url_encode(&ip.to_string())));
     }
     let separator = if url.contains('?') { '&' } else { '?' };
+    #[cfg(not(target_arch = "wasm32"))]
     let body = match agent().get(&format!("{url}{separator}{query}")).call() {
         Ok(response) => response.into_string().unwrap_or_default(),
         Err(ureq::Error::Status(status, response)) => {
@@ -327,6 +352,8 @@ pub fn has_joined(
         }
         Err(ureq::Error::Transport(_)) => return Err(JoinError::Unavailable),
     };
+    #[cfg(target_arch = "wasm32")]
+    let body = String::new();
     Ok(parse_joined(&body))
 }
 
