@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Horizon - Minecraft 26.3 Web</title>
+  <!-- Service worker for SharedArrayBuffer support on GitHub Pages -->
+  <script src="https://cdn.jsdelivr.net/npm/coi-serviceworker/coi-serviceworker.min.js"></script>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div id="canvas-container">
+    <canvas id="horizon-canvas"></canvas>
+  </div>
+  
+  <div id="status-card">
+    <div class="header">
+      <span class="logo">⛏️ Horizon Web</span>
+      <span class="badge">Minecraft 26.3 • WebGPU</span>
+    </div>
+    <p id="status-message">Initializing WebAssembly engine...</p>
+    <div id="progress-bar-container">
+      <div id="progress-bar"></div>
+    </div>
+  </div>
+
+  <script type="module">
+    import init, { run_horizon } from './horizon_web.js';
+
+    async function start() {
+      const statusMsg = document.getElementById('status-message');
+      const progressBar = document.getElementById('progress-bar');
+      const statusCard = document.getElementById('status-card');
+
+      try {
+        if (!navigator.gpu) {
+          console.warn("WebGPU not found on navigator; wgpu will attempt WebGL2 fallback.");
+        }
+        
+        progressBar.style.width = '35%';
+        statusMsg.textContent = 'Loading WebAssembly binary...';
+
+        await init();
+
+        progressBar.style.width = '85%';
+        statusMsg.textContent = 'Starting Winit event loop & WebGPU context...';
+
+        run_horizon('horizon-canvas');
+
+        progressBar.style.width = '100%';
+        setTimeout(() => {
+          statusCard.classList.add('hidden');
+        }, 800);
+      } catch (err) {
+        statusMsg.textContent = 'Error starting Horizon: ' + err;
+        statusMsg.style.color = '#ff6b6b';
+        console.error(err);
+      }
+    }
+
+    start();
+  </script>
+</body>
+</html>

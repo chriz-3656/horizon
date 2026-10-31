@@ -199,10 +199,14 @@ pub fn catch_stop_signals() {}
 /// World generation, meshing and the tick allocate and free small blocks on
 /// every worker at once; the system heaps serialise them (Windows' heap was
 /// 16% of a chunk's generation time), mimalloc keeps a heap per thread.
+#[cfg(not(target_arch = "wasm32"))]
 pub use mimalloc::MiMalloc as Allocator;
+#[cfg(target_arch = "wasm32")]
+pub use std::alloc::System as Allocator;
 
 /// `mi_option_purge_delay` in mimalloc.h (index 15 in v2 and v3); the bindings
 /// don't name it.
+#[cfg(not(target_arch = "wasm32"))]
 const PURGE_DELAY: libmimalloc_sys::mi_option_t = 15;
 
 /// Set the allocator up, first thing in `main`: free pages go back to the OS
@@ -210,6 +214,7 @@ const PURGE_DELAY: libmimalloc_sys::mi_option_t = 15;
 /// quarter more memory than with the system heap; without it a few percent,
 /// and generation keeps most of its speed-up.
 pub fn configure_allocator() {
+    #[cfg(not(target_arch = "wasm32"))]
     // SAFETY: sets one integer option, which mimalloc reads at each purge.
     unsafe {
         libmimalloc_sys::mi_option_set(PURGE_DELAY, 0);
@@ -221,11 +226,14 @@ pub fn configure_allocator() {
 /// native libraries still use: glibc keeps freed pages in the arena of the
 /// thread that allocated them, and macOS in its zones until memory runs short.
 pub fn release_free_memory() {
-    // SAFETY: frees only pages no allocation uses (this thread's heap, shared arenas).
-    unsafe {
-        libmimalloc_sys::mi_collect(true);
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        // SAFETY: frees only pages no allocation uses (this thread's heap, shared arenas).
+        unsafe {
+            libmimalloc_sys::mi_collect(true);
+        }
+        release();
     }
-    release();
 }
 
 #[cfg(all(target_os = "linux", target_env = "gnu"))]

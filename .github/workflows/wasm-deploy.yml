@@ -1,0 +1,76 @@
+name: Build and Deploy Wasm Browser App
+
+on:
+  push:
+    branches: [ main, wasm-web-client ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: "pages"
+  cancel-in-progress: true
+
+jobs:
+  build-wasm:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - name: Setup Rust Cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: "wasm-build"
+
+      - name: Install wasm-bindgen-cli & binaryen
+        run: |
+          cargo install wasm-bindgen-cli --version 0.2.100 --locked || true
+          sudo apt-get update && sudo apt-get install -y binaryen
+
+      - name: Compile Horizon Web to WebAssembly
+        env:
+          RUSTFLAGS: "--cfg getrandom_backend=\"wasm_js\""
+        run: |
+          cargo build --target wasm32-unknown-unknown --release -p horizon-web
+
+      - name: Generate wasm-bindgen JavaScript Glue
+        run: |
+          mkdir -p dist
+          wasm-bindgen --target web \
+            --out-dir dist \
+            --out-name horizon_web \
+            target/wasm32-unknown-unknown/release/horizon_web.wasm
+
+      - name: Optimize Wasm with wasm-opt
+        run: |
+          wasm-opt -O3 dist/horizon_web_bg.wasm -o dist/horizon_web_bg.wasm || true
+
+      - name: Package Web Shell & Assets
+        run: |
+          cp web/index.html dist/index.html
+          cp web/styles.css dist/styles.css
+
+      - name: Upload Pages Artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist/
+
+  deploy-pages:
+    needs: build-wasm
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

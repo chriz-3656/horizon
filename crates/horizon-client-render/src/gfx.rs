@@ -954,7 +954,7 @@ impl wgpu::rwh::HasDisplayHandle for WindowDisplay {
 /// the renderer's start (#746). macOS has Metal only.
 fn backend_order(api: GraphicsApi, os: &str, wgpu_backend: bool) -> Vec<wgpu::Backends> {
     use wgpu::Backends;
-    if os == "macos" || wgpu_backend {
+    if os == "macos" || os == "unknown" || wgpu_backend {
         return vec![Backends::default()];
     }
     let windows = os == "windows";
@@ -971,6 +971,7 @@ fn backends_name(backends: wgpu::Backends) -> &'static str {
         wgpu::Backends::VULKAN => "Vulkan",
         wgpu::Backends::DX12 => "DirectX 12",
         wgpu::Backends::GL => "OpenGL",
+        wgpu::Backends::BROWSER_WEBGPU => "WebGPU",
         _ => "graphics",
     }
 }

@@ -1,0 +1,38 @@
+[package]
+name = "horizon-web"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+description = "Horizon Minecraft WebAssembly browser client"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+horizon-core = { path = "../horizon-core" }
+horizon-items = { path = "../horizon-items" }
+horizon-command = { path = "../horizon-command" }
+horizon-world = { path = "../horizon-world" }
+horizon-assets = { path = "../horizon-assets" }
+horizon-client-core = { path = "../horizon-client-core" }
+horizon-client-input = { path = "../horizon-client-input" }
+horizon-client-render = { path = "../horizon-client-render" }
+horizon-protocol = { path = "../horizon-protocol" }
+winit = "0.30.13"
+wgpu = { version = "30.0.1", default-features = false, features = ["webgpu", "webgl", "wgsl"] }
+wasm-bindgen = "0.2"
+wasm-bindgen-futures = "0.4"
+console_error_panic_hook = "0.1"
+log = "0.4"
+console_log = "1.0"
+web-sys = { version = "0.3", features = [
+    "Document",
+    "Element",
+    "HtmlCanvasElement",
+    "Window",
+    "Performance",
+    "console",
+] }
+
+[lints]
+workspace = true
