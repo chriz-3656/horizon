@@ -20,7 +20,7 @@ horizon-client-render = { path = "../horizon-client-render" }
 horizon-protocol = { path = "../horizon-protocol" }
 winit = "0.30.13"
 wgpu = { version = "30.0.1", default-features = false, features = ["webgpu", "webgl", "wgsl"] }
-wasm-bindgen = "0.2"
+wasm-bindgen = "=0.2.129"
 wasm-bindgen-futures = "0.4"
 console_error_panic_hook = "0.1"
 log = "0.4"
